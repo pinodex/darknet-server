@@ -100,9 +100,6 @@ predict_image = lib.network_predict_image
 predict_image.argtypes = [c_void_p, IMAGE]
 predict_image.restype = POINTER(c_float)
 
-def get_base():
-    return base
-
 def classify(net, meta, im):
     out = predict_image(net, im)
     res = []
