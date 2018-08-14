@@ -1,21 +1,7 @@
+import os, random
 from ctypes import *
-import math
-import random
 
-def sample(probs):
-    s = sum(probs)
-    probs = [a/s for a in probs]
-    r = random.uniform(0, 1)
-    for i in range(len(probs)):
-        r = r - probs[i]
-        if r <= 0:
-            return i
-    return len(probs)-1
-
-def c_array(ctype, values):
-    arr = (ctype*len(values))()
-    arr[:] = values
-    return arr
+base = os.path.abspath(__file__ + '/../../')
 
 class BOX(Structure):
     _fields_ = [("x", c_float),
@@ -31,7 +17,6 @@ class DETECTION(Structure):
                 ("objectness", c_float),
                 ("sort_class", c_int)]
 
-
 class IMAGE(Structure):
     _fields_ = [("w", c_int),
                 ("h", c_int),
@@ -42,10 +27,7 @@ class METADATA(Structure):
     _fields_ = [("classes", c_int),
                 ("names", POINTER(c_char_p))]
 
-    
-
-#lib = CDLL("/home/pjreddie/documents/darknet/libdarknet.so", RTLD_GLOBAL)
-lib = CDLL("libdarknet.so", RTLD_GLOBAL)
+lib = CDLL(base + '/libdarknet.so', RTLD_GLOBAL)
 lib.network_width.argtypes = [c_void_p]
 lib.network_width.restype = c_int
 lib.network_height.argtypes = [c_void_p]
@@ -107,12 +89,19 @@ load_image = lib.load_image_color
 load_image.argtypes = [c_char_p, c_int, c_int]
 load_image.restype = IMAGE
 
+load_image_from_memory = lib.load_image_from_memory_color
+load_image_from_memory.argtypes = [POINTER(c_char), c_int, c_int, c_int]
+load_image_from_memory.restype = IMAGE
+
 rgbgr_image = lib.rgbgr_image
 rgbgr_image.argtypes = [IMAGE]
 
 predict_image = lib.network_predict_image
 predict_image.argtypes = [c_void_p, IMAGE]
 predict_image.restype = POINTER(c_float)
+
+def get_base():
+    return base
 
 def classify(net, meta, im):
     out = predict_image(net, im)
@@ -123,7 +112,8 @@ def classify(net, meta, im):
     return res
 
 def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
-    im = load_image(image, 0, 0)
+    size = len(image)
+    im = load_image_from_memory(image, size, 0, 0)
     num = c_int(0)
     pnum = pointer(num)
     predict_image(net, im)
@@ -132,25 +122,14 @@ def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
     if (nms): do_nms_obj(dets, num, meta.classes, nms);
 
     res = []
+
     for j in range(num):
         for i in range(meta.classes):
             if dets[j].prob[i] > 0:
                 b = dets[j].bbox
                 res.append((meta.names[i], dets[j].prob[i], (b.x, b.y, b.w, b.h)))
+
     res = sorted(res, key=lambda x: -x[1])
     free_image(im)
     free_detections(dets, num)
     return res
-    
-if __name__ == "__main__":
-    #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
-    #im = load_image("data/wolf.jpg", 0, 0)
-    #meta = load_meta("cfg/imagenet1k.data")
-    #r = classify(net, meta, im)
-    #print r[:10]
-    net = load_net("cfg/tiny-yolo.cfg", "tiny-yolo.weights", 0)
-    meta = load_meta("cfg/coco.data")
-    r = detect(net, meta, "data/dog.jpg")
-    print r
-    
-

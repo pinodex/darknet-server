@@ -647,6 +647,32 @@ image load_image_cv(char *filename, int channels)
     return out;
 }
 
+image load_image_from_memory_cv(char *buf, int len, int channels)
+{
+    IplImage* src = 0;
+    int flag = -1;
+    CvMat *mat_buf = NULL;
+    if (channels == 0) flag = -1;
+    else if (channels == 1) flag = 0;
+    else if (channels == 3) flag = 1;
+    else {
+        fprintf(stderr, "OpenCV can't force load with %d channels\n", channels);
+    }
+    mat_buf = cvCreateMat(1, len, CV_8U);
+    memcpy(mat_buf->data.ptr, buf, len);
+    if( (src = cvDecodeImage(mat_buf, flag)) == 0 )
+    {
+        fprintf(stderr, "Cannot load image from memory\n");
+        return make_image(10,10,3);
+        //exit(0);
+    }
+    image out = ipl_to_image(src);
+    cvReleaseMat(&mat_buf);
+    cvReleaseImage(&src);
+    rgbgr_image(out);
+    return out;
+}
+
 void flush_stream_buffer(CvCapture *cap, int n)
 {
     int i;
@@ -1442,6 +1468,19 @@ void test_resize(char *filename)
 #endif
 }
 
+static void write_byte_buffer_as_ratio_to_image_data(unsigned char *data, image *im, int w, int h, int c)
+{
+    int i,j,k;
+    for(k = 0; k < c; ++k){
+        for(j = 0; j < h; ++j){
+            for(i = 0; i < w; ++i){
+                int dst_index = i + w*j + w*h*k;
+                int src_index = k + c*i + c*w*j;
+                im->data[dst_index] = (float)data[src_index]/255.;
+            }
+        }
+    }
+}
 
 image load_image_stb(char *filename, int channels)
 {
@@ -1452,17 +1491,26 @@ image load_image_stb(char *filename, int channels)
         exit(0);
     }
     if(channels) c = channels;
-    int i,j,k;
+    
     image im = make_image(w, h, c);
-    for(k = 0; k < c; ++k){
-        for(j = 0; j < h; ++j){
-            for(i = 0; i < w; ++i){
-                int dst_index = i + w*j + w*h*k;
-                int src_index = k + c*i + c*w*j;
-                im.data[dst_index] = (float)data[src_index]/255.;
-            }
-        }
+
+    write_byte_buffer_as_ratio_to_image_data(data, &im, w, h, c);
+    free(data);
+    
+    return im;
+}
+
+image load_image_from_memory_stb(char *buf, int len, int channels)
+{
+    int w, h, c;
+    unsigned char *data = stbi_load_from_memory((stbi_uc *)buf, len, &w, &h, &c, channels);
+    if (!data) {
+        fprintf(stderr, "Cannot load image from memory\nSTB Reason: %s\n", stbi_failure_reason());
+        exit(0);
     }
+    if(channels) c = channels;
+    image im = make_image(w, h, c);
+    write_byte_buffer_as_ratio_to_image_data(data, &im, w, h, c);
     free(data);
     return im;
 }
@@ -1483,9 +1531,30 @@ image load_image(char *filename, int w, int h, int c)
     return out;
 }
 
+image load_image_from_memory(char *buf, int len, int w, int h, int c)
+{
+#ifdef OPENCV
+    image out = load_image_from_memory_cv(buf, len, c);
+#else
+    image out = load_image_from_memory_stb(buf, len, c);
+#endif
+
+    if((h && w) && (h != out.h || w != out.w)){
+        image resized = resize_image(out, w, h);
+        free_image(out);
+        out = resized;
+    }
+    return out;
+}
+
 image load_image_color(char *filename, int w, int h)
 {
     return load_image(filename, w, h, 3);
+}
+
+image load_image_from_memory_color(char *buf, int len, int w, int h)
+{
+    return load_image_from_memory(buf, len, w, h, 3);
 }
 
 image get_image_layer(image m, int l)
