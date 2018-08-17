@@ -31,10 +31,9 @@ def message(sid, data):
 
     print result
 
-    if result:
-        output = json.dumps(result)
-        sio.emit('result', output, room=sid)
-        #print output
+    output = json.dumps(result)
+    sio.emit('result', output, room=sid)
+    #print output
 
 @sio.on('disconnect', namespace='/')
 def disconnect(sid):
